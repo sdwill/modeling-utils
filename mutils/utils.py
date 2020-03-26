@@ -1,33 +1,7 @@
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-
-def create_axis(N, step, coords='pc'):
-    """
-    Create a one-dimensional coordinate axis with a given size and step size.  Can be constructed
-    to follow either the FFT (pixel-centered) or MFT (inter-pixel-centered) convention,
-    which differ by half a pixel.
-
-    Parameters
-    ----------
-    N : int
-        Number of pixels in output axis
-    step : float
-        Physical step size between axis elements
-    coords : str
-        Either 'pc' (pixel-centered) or 'ipc' (inter-pixel-centered)
-
-    Returns
-    -------
-    Union[np.ndarray, np.matrix]
-        The output coordinate axis
-    """
-    axis = np.arange(-N // 2, N // 2, dtype=np.float64) * step
-
-    if coords == 'ipc':
-        axis += 0.5 * step
-
-    return axis
+import hcipy
+import scipy.optimize as spopt
 
 
 def zeropad(arr, *, Q=None, N=None):
@@ -302,3 +276,103 @@ def broadcast(axis):
     x = axis[None, :]
     y = axis[:, None]
     return x, y
+
+
+def extent_from_axis(axis):
+    """
+    Return appropriate values for the extent keyword of matplotlib.pyplot.imshow().  The values
+    are computed from a coordinate axis such that when an image is displayed with matplotlib,
+    the upper and lower limits are consistent with the view that each pixel represents a square
+    region of space with side length (step).  This function assumes that the image is square with
+    the same pixel spacing and pixel count along the horizontal and vertical directions.
+
+    Parameters
+    ----------
+    axis : array_like
+        Coordinate axis
+
+    Returns
+    -------
+    tuple of float
+        Tuple in the form (lower_x, upper_x, lower_y, upper_y) whose entries specify the physical
+        coordinates of the upper and lower limits of the displayed image in the horizontal and
+        vertical directions.
+    """
+    step = axis[1] - axis[0]
+    lower = axis.min() - 0.5 * step
+    upper = axis.max() + 0.5 * step
+
+    return 2 * (lower, upper)
+
+
+def hcipy_grid_from_axis(axis):
+    """
+    Create an hcipy coordinate grid from a linear axis.  Assumes that both dimensions have the same
+    extent and sample spacing.
+
+    Note that this ignores the extra arguments 'center' and 'has_center' in
+    hcipy.make_uniform_grid(), because this is intended to be used for display purposes only; e.g.
+
+
+    Parameters
+    ----------
+    axis : array_like
+        Coordinate axis
+    """
+    step = axis[1] - axis[0]
+    extent = axis.max() - axis.min() + step
+    M = len(axis)
+    return hcipy.make_uniform_grid((M, M), (extent, extent))
+
+
+def field_from_array(arr, axis):
+    grid = hcipy_grid_from_axis(axis)
+    return hcipy.Field(arr.ravel(), grid)
+
+# TODO: implement array_from_field
+
+
+def check_gradient(obj, x0):
+    """
+    Check analytical gradient.  This differs from the scipy.optimize function in two ways.  First, the objective is assumed to return BOTH the objective AND the gradient,
+    because I'm using algorithmic differentiation.  Second, the normalized sum-of-squared differences metric is computed instead of just SSD, which is much more useful.
+    """
+
+    # Generate internal functions that extract just the objective and gradient
+    def gradient(u):
+        _, grad = obj(u)
+        return grad
+
+    def objective(u):
+        J, _ = obj(u, evaluate_gradient=False)
+        return J
+
+    grad_analytical = gradient(x0)
+    grad_numerical = spopt.approx_fprime(x0, objective, epsilon=1e-6)
+
+    return np.linalg.norm(grad_analytical - grad_numerical) / np.linalg.norm(grad_numerical)
+
+
+def embed(arr, mask, mask_output=False):
+    """
+    Embed an array into a higher-dimensional array using a boolean mask.
+
+    Parameters
+    ----------
+    arr : array_like
+    mask : array_like
+    mask_output : bool
+        Whether to convert the output to a masked array.
+
+    Returns
+    -------
+    array_like
+
+    """
+    output = np.zeros(mask.shape, dtype=np.complex128)
+    output[mask] = arr
+
+    if mask_output:
+        output = np.ma.masked_where(mask == 0, output)
+
+    return output
