@@ -305,7 +305,7 @@ def extent_from_axis(axis):
     return 2 * (lower, upper)
 
 
-def hcipy_grid_from_axis(axis):
+def hcipy_grid_from_axes(*axes):
     """
     Create an hcipy coordinate grid from a linear axis.  Assumes that both dimensions have the same
     extent and sample spacing.
@@ -319,14 +319,13 @@ def hcipy_grid_from_axis(axis):
     axis : array_like
         Coordinate axis
     """
-    step = axis[1] - axis[0]
-    extent = axis.max() - axis.min() + step
-    M = len(axis)
-    return hcipy.make_uniform_grid((M, M), (extent, extent))
+    steps = [axis[1] - axis[0] for axis in axes]
+    extents = [axis.max() - axis.min() + step for step, axis in zip(steps, axes)]
+    return hcipy.make_uniform_grid([len(axis) for axis in axes], extents)
 
 
-def field_from_array(arr, axis):
-    grid = hcipy_grid_from_axis(axis)
+def field_from_array(arr, *axes):
+    grid = hcipy_grid_from_axes(*axes)
     return hcipy.Field(arr.ravel(), grid)
 
 # TODO: implement array_from_field
