@@ -198,39 +198,31 @@ def normalize_rms(arr, target_rms, mask=None):
     return arr * target_rms / actual_rms
 
 
-def circleshade(size, *, clear_size=None, radius=None, center=(0, 0)):
+def circleshade(axis, radius):
     """
-    Render a circular aperture with shaded gray-level pixels.  Originally implemented in wfscore
-    package by Alden Jurling, Matthew Bergkoetter et al.
+    Generate a circular aperture with antialiased edges using the ramp algorithm described in [1].
 
     Parameters
-    -----------
-    size : int
-        Array size for created pupil (will be square).
-    clear_size : float
-        Diameter in pixels for shaded circle.
+    ----------
+    axis : array_like
+        Coordinate axis.  Assumed to be the same in both directions.
     radius : float
-        Radius in pixels for shaded circle.
-    center : 2-tuple
-        Center point (w.r.t to center of array) for shaded circle. Defaults to
-        ``(0, 0)``
+        Aperture radius.
 
     Returns
-    --------
-    circle : np.ndarray
-        Shaded circle.
+    -------
+    array_like
+        Antialiased aperture
+
+    References
+    ----------
+    [1] Will and Fienup, "Algorithm for exact area-weighted antialiasing of discrete circular
+        apertures," JOSA A 37, 688-696 (2020).
     """
-    if clear_size is None and radius is not None:
-        clear_size = radius * 2
-    elif clear_size is None and radius is None:
-        raise ValueError('Radius or diameter must be specificed')
-    X, Y = np.mgrid[:size, :size] - size // 2
-    # Center is defined relative to row/col with DC shift.
-    R = ((X - center[0]) ** 2 + (Y - center[1]) ** 2) ** 0.5
-    radph = clear_size / 2 + 0.5
-    circ_tmp = radph - R
-    circ = np.minimum(np.maximum(circ_tmp, 0), 1)
-    return circ
+    rg = radial_grid(axis)  # Radial grid
+    step = axis[1] - axis[0]
+    delta_r = 0.5 + (radius - rg) / step
+    return np.minimum(np.maximum(delta_r, 0), 1)
 
 
 def radial_grid(axis):
