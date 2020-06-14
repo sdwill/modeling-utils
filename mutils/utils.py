@@ -46,6 +46,12 @@ def zeropad(arr, *, Q=None, N=None):
     return np.pad(arr, pad_list, mode='constant', constant_values=0)
 
 
+def bin(arr, binfac):
+    M, N = arr.shape
+    new_shape = (M // binfac, binfac, N // binfac, binfac)
+    return arr.reshape(new_shape).mean(axis=3).mean(axis=1)
+
+
 def crop(arr, desired_shape):
     """
     Slice out the centermost pixels of an array along each dimension.
