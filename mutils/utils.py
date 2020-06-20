@@ -204,7 +204,7 @@ def normalize_rms(arr, target_rms, mask=None):
     return arr * target_rms / actual_rms
 
 
-def circleshade(axis, radius):
+def circleshade(axis, radius, center=(0,0)):
     """
     Generate a circular aperture with antialiased edges using the ramp algorithm described in [1].
 
@@ -225,7 +225,11 @@ def circleshade(axis, radius):
     [1] Will and Fienup, "Algorithm for exact area-weighted antialiasing of discrete circular
         apertures," JOSA A 37, 688-696 (2020).
     """
-    rg = radial_grid(axis)  # Radial grid
+    # if center == (0, 0):
+    #     rg = radial_grid(axis)  # Radial grid
+    # else:
+    xb, yb = broadcast(axis)
+    rg = np.sqrt( (xb - center[0]) ** 2 + (yb - center[1]) ** 2)
     step = axis[1] - axis[0]
     delta_r = 0.5 + (radius - rg) / step
     return np.minimum(np.maximum(delta_r, 0), 1)
