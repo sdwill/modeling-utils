@@ -154,5 +154,5 @@ def fft_angular_spectrum(arr, axis, wavelength, dz, paraxial=False):
     """
     fx = conjugate_axis(axis)
     H = angular_spectrum_transfer(fx, wavelength, dz, paraxial=paraxial)
-    return ifft(H * fft(arr))
+    return ifft(H * fft(arr, norm='ortho'), norm='ortho')
 
