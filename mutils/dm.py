@@ -1,13 +1,16 @@
 import numpy as np
 from . import utils, dfts
+from .coordinate_axis import create_axis
 
 
 class DeformableMirror:
-    def __init__(self, num_act_across, x, diam):
+    def __init__(self, num_act_across, x, diam, crosstalk=0.15):
         self.num_act_across = num_act_across
         self.diam = diam
-        self.sigma = 1 / (num_act_across / 2)  # Width parameter
-
+        self.actuator_spacing = diam / num_act_across
+        self.sigma = self.actuator_spacing / np.sqrt(-2 * np.log(crosstalk))  # Width parameter
+        # print(self.sigma)
+        # print(self.actuator_spacing)
         # Coordinate axes
         # Spatial coordinates in DM plane
         self.x = x
@@ -20,12 +23,25 @@ class DeformableMirror:
     @staticmethod
     def gaussian_influence_function(x, y, sigma):
         """ Circular Gaussian influence function """
-        return np.exp(-(x ** 2 + y ** 2) / (0.5 * sigma) ** 2)
+        return np.exp(-(x ** 2 + y ** 2) / (2 * sigma ** 2))
+
+    @staticmethod
+    def sinc_influence_function(x, y, sigma):
+        return np.sinc(x / sigma) * np.sinc(y / sigma)
 
     @property
     def kernel(self):
         xb, yb = utils.broadcast(self.x)
-        return self.gaussian_influence_function(xb, yb, self.sigma)
+        cutoff_sigma = 3
+        cutoff_r = self.actuator_spacing / self.sigma * cutoff_sigma
+        mask = (xb ** 2 + yb ** 2 < (cutoff_r * self.sigma) ** 2)
+        sub = np.exp(-0.5 * cutoff_r**2)
+        # print(cutoff_sigma)
+        # print(cutoff_r)
+        # print(cutoff_r * self.sigma)
+        # print(sub)
+        return (self.gaussian_influence_function(xb, yb, self.sigma) - sub) * mask
+        # return self.gaussian_influence_function(xb, yb, self.sigma)
 
     @property
     def fx(self):
@@ -40,7 +56,15 @@ class DeformableMirror:
     @property
     def c(self):
         """ DM actuator center positions """
-        return 0.5 * self.sigma * (self.a + 0.5)
+        if self.num_act_across % 2:  # Odd number of actuators
+            centering = 'pc'
+            shift = self.actuator_spacing
+        else:
+            centering = 'ipc'
+            shift = 0
+
+        step = self.actuator_spacing * (self.num_act_across - 1) / self.num_act_across
+        return create_axis(self.num_act_across, step, centering) + shift
 
     @property
     def surface(self):
@@ -54,7 +78,7 @@ class DeformableMirror:
         return dfts.ifft(product, norm='ortho').real
 
     def reverse(self, gradient):
-        ft_gradient = dfts.fft(gradient, norm='ortho')
+        ft_gradient = dfts.fft(gradient.real, norm='ortho')
         product = self.transfer_function.conj() * ft_gradient
         return np.linalg.multi_dot(
-            [self.fourier_matrix.conj(), product, self.fourier_matrix.conj().T]).real
+            [self.fourier_matrix.conj(), product, self.fourier_matrix.conj().T])
