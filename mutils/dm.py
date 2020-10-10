@@ -4,49 +4,73 @@ from .coordinate_axis import create_axis
 
 
 class DeformableMirror:
-    def __init__(self, num_act_across, x, diam, crosstalk=0.15):
+    """
+    Efficient model for a deformable mirror that uses the matrix Fourier transform.
+    """
+    def __init__(self, num_act_across, pupil_axis, diam,
+                 crosstalk=0.15,
+                 actuator_mask=None,
+                 inclination=0.,
+                 translation=0.):
         self.num_act_across = num_act_across
         self.diam = diam
-        self.actuator_spacing = diam / num_act_across
-        self.sigma = self.actuator_spacing / np.sqrt(-2 * np.log(crosstalk))  # Width parameter
-        # print(self.sigma)
-        # print(self.actuator_spacing)
-        # Coordinate axes
-        # Spatial coordinates in DM plane
-        self.x = x
+        self.inclination = inclination
+        self.translation = translation
+        self.obliquity = np.cos(self.inclination * np.pi / 180)
+
+        self.actuator_spacing_y = (diam / num_act_across)
+        self.actuator_spacing_x = self.actuator_spacing_y * self.obliquity
+
+        if actuator_mask is None:
+            self.actuator_mask = np.ones((num_act_across, num_act_across), dtype=bool)
+        else:
+            self.actuator_mask = actuator_mask
+
+        self.num_actuator = self.actuator_mask.sum()
+        self.sigma_x = self.actuator_spacing_x / np.sqrt(-2 * np.log(crosstalk))
+        self.sigma_y = self.actuator_spacing_y / np.sqrt(-2 * np.log(crosstalk))
+        self.pupil_axis = pupil_axis
 
         # Precompute the Fourier-domain transfer function for our influence function
-        self.transfer_function = dfts.fft(self.kernel, norm='ortho')
-        self.command = np.zeros((num_act_across, num_act_across), dtype=np.float64)
-        self.fourier_matrix = np.exp(-1j * 2 * np.pi * np.outer(self.c, self.fx))
+        self.transfer_function = dfts.fft(self.kernel) / len(pupil_axis)
+        self.command = np.zeros(self.num_actuator, dtype=np.float64)
+
+        # Fourier transforming matrices for the x and y directions
+        self.Fx = np.exp(-1j * 2 * np.pi * np.outer(self.fx, self.cx))
+        self.Fy = np.exp(-1j * 2 * np.pi * np.outer(self.fy, self.cy))
 
     @staticmethod
-    def gaussian_influence_function(x, y, sigma):
+    def gaussian_influence_function(x, y, sigma_x, sigma_y):
         """ Circular Gaussian influence function """
-        return np.exp(-(x ** 2 + y ** 2) / (2 * sigma ** 2))
+        xb = x[None, :]
+        yb = y[:, None]
+        return np.exp(-0.5 * ((xb / sigma_x) ** 2 + (yb / sigma_y) ** 2))
 
     @staticmethod
-    def sinc_influence_function(x, y, sigma):
-        return np.sinc(x / sigma) * np.sinc(y / sigma)
+    def sinc_influence_function(x, y, sigma_x, sigma_y):
+        return np.sinc(x / sigma_x) * np.sinc(y / sigma_y)
+
+    @property
+    def x(self):
+        return ((self.pupil_axis + self.translation) * self.obliquity)
+
+    @property
+    def y(self):
+        return self.pupil_axis
 
     @property
     def kernel(self):
-        xb, yb = utils.broadcast(self.x)
-        cutoff_sigma = 3
-        cutoff_r = self.actuator_spacing / self.sigma * cutoff_sigma
-        mask = (xb ** 2 + yb ** 2 < (cutoff_r * self.sigma) ** 2)
-        sub = np.exp(-0.5 * cutoff_r**2)
-        # print(cutoff_sigma)
-        # print(cutoff_r)
-        # print(cutoff_r * self.sigma)
-        # print(sub)
-        return (self.gaussian_influence_function(xb, yb, self.sigma) - sub) * mask
-        # return self.gaussian_influence_function(xb, yb, self.sigma)
+        return self.gaussian_influence_function(self.x, self.y, self.sigma_x, self.sigma_y)
 
     @property
     def fx(self):
-        """ Spatial frequency axis """
+        """ Spatial frequency axis along x"""
         return dfts.conjugate_axis(self.x)
+
+    @property
+    def fy(self):
+        """ Spatial frequency axis along y"""
+        return dfts.conjugate_axis(self.y)
 
     @property
     def a(self):
@@ -54,16 +78,29 @@ class DeformableMirror:
         return np.arange(-self.num_act_across / 2, self.num_act_across / 2)
 
     @property
-    def c(self):
+    def cx(self):
         """ DM actuator center positions """
         if self.num_act_across % 2:  # Odd number of actuators
             centering = 'pc'
-            shift = self.actuator_spacing
+            shift = self.actuator_spacing_x
         else:
             centering = 'ipc'
             shift = 0
 
-        step = self.actuator_spacing * (self.num_act_across - 1) / self.num_act_across
+        step = self.actuator_spacing_x * (self.num_act_across - 1) / self.num_act_across
+        return create_axis(self.num_act_across, step, centering) + shift + self.translation
+
+    @property
+    def cy(self):
+        """ DM actuator center positions """
+        if self.num_act_across % 2:  # Odd number of actuators
+            centering = 'pc'
+            shift = self.actuator_spacing_y
+        else:
+            centering = 'ipc'
+            shift = 0
+
+        step = self.actuator_spacing_y * (self.num_act_across - 1) / self.num_act_across
         return create_axis(self.num_act_across, step, centering) + shift
 
     @property
@@ -73,12 +110,12 @@ class DeformableMirror:
 
     def forward(self, command):
         """ Get the surface for an arbitrary set of input commands """
-        ft_command = np.linalg.multi_dot([self.fourier_matrix.T, command, self.fourier_matrix])
+        command = utils.embed(command, self.actuator_mask)
+        ft_command = np.linalg.multi_dot([self.Fx, command, self.Fy.T])
         product = self.transfer_function * ft_command
-        return dfts.ifft(product, norm='ortho').real
+        return dfts.ifft(product).real * len(self.fx)
 
     def reverse(self, gradient):
-        ft_gradient = dfts.fft(gradient.real, norm='ortho')
+        ft_gradient = dfts.fft(gradient.real) / len(self.fx)
         product = self.transfer_function.conj() * ft_gradient
-        return np.linalg.multi_dot(
-            [self.fourier_matrix.conj(), product, self.fourier_matrix.conj().T])
+        return np.linalg.multi_dot([self.Fx.conj().T, product, self.Fy.conj()])[self.actuator_mask]
