@@ -156,3 +156,13 @@ def fft_angular_spectrum(arr, axis, wavelength, dz, paraxial=False):
     H = angular_spectrum_transfer(fx, wavelength, dz, paraxial=paraxial)
     return ifft(H * fft(arr, norm='ortho'), norm='ortho')
 
+
+def angular_spectrum(E, H, direction='forward'):
+    """
+    Compute angular spectrum propagation of E using a precomputed transfer function.
+    This is much more efficient if the transfer function is re-used repeatedly.
+    """
+    if direction == 'reverse':
+        H = H.conj()
+
+    return np.fft.fftshift(np.fft.ifft2(H * np.fft.fft2(np.fft.ifftshift(E))))
