@@ -11,7 +11,8 @@ class DeformableMirror:
                  crosstalk=0.15,
                  actuator_mask=None,
                  inclination=0.,
-                 translation=0.):
+                 translation=0.,
+                 print_through_model=None):
         self.num_act_across = num_act_across
         self.diam = diam
         self.inclination = inclination
@@ -25,6 +26,12 @@ class DeformableMirror:
             self.actuator_mask = np.ones((num_act_across, num_act_across), dtype=bool)
         else:
             self.actuator_mask = actuator_mask
+
+        if print_through_model is None:
+            M = len(pupil_axis)
+            self.print_through_model = np.zeros((M, M), dtype=np.float64)
+        else:
+            self.print_through_model = print_through_model
 
         self.num_actuator = self.actuator_mask.sum()
         self.sigma_x = self.actuator_spacing_x / np.sqrt(-2 * np.log(crosstalk))
@@ -113,7 +120,7 @@ class DeformableMirror:
         command = utils.embed(command, self.actuator_mask)
         ft_command = np.linalg.multi_dot([self.Fx, command, self.Fy.T])
         product = self.transfer_function * ft_command
-        return dfts.ifft(product).real * len(self.fx)
+        return dfts.ifft(product).real * len(self.fx) + self.print_through_model
 
     def reverse(self, gradient):
         ft_gradient = dfts.fft(gradient.real) / len(self.fx)
