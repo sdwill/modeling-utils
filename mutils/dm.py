@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.lib.function_base import flip
 from . import utils, dfts
 from .coordinate_axis import create_axis
 
@@ -12,12 +13,14 @@ class DeformableMirror:
                  actuator_mask=None,
                  inclination=0.,
                  translation=0.,
-                 print_through_model=None):
+                 print_through_model=None,
+                 flip_x=False):
         self.num_act_across = num_act_across
         self.diam = diam
         self.inclination = inclination
         self.translation = translation
         self.obliquity = np.cos(self.inclination * np.pi / 180)
+        self.flip_x = flip_x
 
         self.actuator_spacing_y = (diam / num_act_across)
         self.actuator_spacing_x = self.actuator_spacing_y * self.obliquity
@@ -120,9 +123,16 @@ class DeformableMirror:
         command = utils.embed(command, self.actuator_mask)
         ft_command = np.linalg.multi_dot([self.Fx, command, self.Fy.T])
         product = self.transfer_function * ft_command
-        return dfts.ifft(product).real * len(self.fx) + self.print_through_model
+        surface = dfts.ifft(product).real * len(self.fx) + self.print_through_model
 
+        if self.flip_x:
+            surface = surface[:, ::-1]
+            
+        return surface
     def reverse(self, gradient):
+        if self.flip_x:
+            gradient = gradient[:, ::-1]
+            
         ft_gradient = dfts.fft(gradient.real) / len(self.fx)
         product = self.transfer_function.conj() * ft_gradient
         return np.linalg.multi_dot([self.Fx.conj().T, product, self.Fy.conj()])[self.actuator_mask]
