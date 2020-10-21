@@ -22,7 +22,8 @@ class DeformableMirror:
         self.obliquity = np.cos(self.inclination * np.pi / 180)
         self.flip_x = flip_x
 
-        self.actuator_spacing_y = (diam / num_act_across)
+        self.pupil_center = (self.num_act_across - 1) / 2
+        self.actuator_spacing_y = diam / (num_act_across - 1)
         self.actuator_spacing_x = self.actuator_spacing_y * self.obliquity
 
         if actuator_mask is None:
@@ -37,8 +38,8 @@ class DeformableMirror:
             self.print_through_model = print_through_model
 
         self.num_actuator = self.actuator_mask.sum()
-        self.sigma_x = self.actuator_spacing_x / np.sqrt(-2 * np.log(crosstalk))
-        self.sigma_y = self.actuator_spacing_y / np.sqrt(-2 * np.log(crosstalk))
+        self.sigma_x = self.actuator_spacing_x / np.sqrt(-np.log(crosstalk))
+        self.sigma_y = self.actuator_spacing_y / np.sqrt(-np.log(crosstalk))
         self.pupil_axis = pupil_axis
 
         # Precompute the Fourier-domain transfer function for our influence function
@@ -54,7 +55,7 @@ class DeformableMirror:
         """ Circular Gaussian influence function """
         xb = x[None, :]
         yb = y[:, None]
-        return np.exp(-0.5 * ((xb / sigma_x) ** 2 + (yb / sigma_y) ** 2))
+        return np.exp(-((xb / sigma_x) ** 2 + (yb / sigma_y) ** 2))
 
     @staticmethod
     def sinc_influence_function(x, y, sigma_x, sigma_y):
@@ -90,28 +91,12 @@ class DeformableMirror:
     @property
     def cx(self):
         """ DM actuator center positions """
-        if self.num_act_across % 2:  # Odd number of actuators
-            centering = 'pc'
-            shift = self.actuator_spacing_x
-        else:
-            centering = 'ipc'
-            shift = 0
-
-        step = self.actuator_spacing_x * (self.num_act_across - 1) / self.num_act_across
-        return create_axis(self.num_act_across, step, centering) + shift + self.translation
+        return (np.arange(self.num_act_across) - self.pupil_center) * self.actuator_spacing_x + self.translation
 
     @property
     def cy(self):
         """ DM actuator center positions """
-        if self.num_act_across % 2:  # Odd number of actuators
-            centering = 'pc'
-            shift = self.actuator_spacing_y
-        else:
-            centering = 'ipc'
-            shift = 0
-
-        step = self.actuator_spacing_y * (self.num_act_across - 1) / self.num_act_across
-        return create_axis(self.num_act_across, step, centering) + shift
+        return (np.arange(self.num_act_across) - self.pupil_center) * self.actuator_spacing_y
 
     @property
     def surface(self):
