@@ -51,6 +51,9 @@ def bin(arr, binfac):
     new_shape = (M // binfac, binfac, N // binfac, binfac)
     return arr.reshape(new_shape).mean(axis=3).mean(axis=1)
 
+def tile(arr, tilefac):
+    return arr.repeat(tilefac, axis=0).repeat(tilefac, axis=1)
+
 
 def crop(arr, desired_shape):
     """
