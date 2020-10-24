@@ -36,6 +36,9 @@ class DeformableMirror:
             self.print_through_model = np.zeros((M, M), dtype=np.float64)
         else:
             self.print_through_model = print_through_model
+            
+        if self.flip_x:
+            self.print_through_model = self.print_through_model[:, ::-1]
 
         self.num_actuator = self.actuator_mask.sum()
         self.sigma_x = self.actuator_spacing_x / np.sqrt(-np.log(crosstalk))
